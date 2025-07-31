@@ -1,16 +1,20 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import os
 
+# File paths
 HISTORY_FILE = "history.csv"
 RESULTS_FILE = "results.csv"
-BALANCE_FILE = "sol_balance.txt"
-MARTINGALE_FILE = "martingale_balance.txt"
-INITIAL_BALANCE = 0.1
-BET_AMOUNT = 0.01
+FLAT_FILE = "sol_balance.txt"
+FIXED_FILE = "fixed_balance.txt"
 
+# Constants
+INITIAL_BALANCE = 0.1
+FLAT_BET = 0.01
+FIXED_BET = 0.02
+
+# Load/Save Functions
 @st.cache_data
 def load_csv(file):
     df = pd.read_csv(file)
@@ -35,9 +39,43 @@ def save_result(prediction, actual):
     result_df = load_results()
     result_df.loc[len(result_df)] = [prediction, actual, correct]
     result_df.to_csv(RESULTS_FILE, index=False)
-    update_balance(prediction, actual)
-    update_martingale(prediction, actual)
+    update_flat_balance(prediction, actual)
+    update_fixed_balance(prediction, actual)
 
+# Balance Handlers
+def get_flat_balance():
+    if os.path.exists(FLAT_FILE):
+        with open(FLAT_FILE, "r") as f:
+            return float(f.read())
+    return INITIAL_BALANCE
+
+def get_fixed_balance():
+    if os.path.exists(FIXED_FILE):
+        with open(FIXED_FILE, "r") as f:
+            return float(f.read())
+    return INITIAL_BALANCE
+
+def update_flat_balance(prediction, actual):
+    balance = get_flat_balance()
+    if prediction == "Above":
+        if actual > 2.0:
+            balance += FLAT_BET
+        else:
+            balance -= FLAT_BET
+        with open(FLAT_FILE, "w") as f:
+            f.write(str(balance))
+
+def update_fixed_balance(prediction, actual):
+    balance = get_fixed_balance()
+    if prediction == "Above":
+        if actual > 2.0:
+            balance += FIXED_BET
+        else:
+            balance -= FIXED_BET
+        with open(FIXED_FILE, "w") as f:
+            f.write(str(balance))
+
+# Logic
 def normalize_input(value):
     if value > 10:
         return value / 100
@@ -49,7 +87,6 @@ def compute_improved_confidence(data, threshold=2.0, trend_window=10):
 
     data = np.array(data)
     n = len(data)
-
     weights = np.linspace(0.5, 1.0, n)
     base_score = np.average((data > threshold).astype(int), weights=weights)
 
@@ -69,61 +106,14 @@ def compute_improved_confidence(data, threshold=2.0, trend_window=10):
     combined = max(0, min(combined, 1))
     return combined, 1 - combined
 
-def get_balance():
-    if os.path.exists(BALANCE_FILE):
-        with open(BALANCE_FILE, "r") as f:
-            return float(f.read())
-    return INITIAL_BALANCE
-
-def get_martingale():
-    if os.path.exists(MARTINGALE_FILE):
-        with open(MARTINGALE_FILE, "r") as f:
-            return float(f.read())
-    return INITIAL_BALANCE
-
-def update_balance(prediction, actual):
-    balance = get_balance()
-    if prediction == "Above":
-        if actual > 2.0:
-            balance += BET_AMOUNT
-        else:
-            balance -= BET_AMOUNT
-        with open(BALANCE_FILE, "w") as f:
-            f.write(str(balance))
-
-def update_martingale(prediction, actual):
-    balance = get_martingale()
-    history = load_results()
-    last_bet = BET_AMOUNT
-    streak = 0
-
-    # Find last martingale amount
-    for i in reversed(range(len(history))):
-        row = history.iloc[i]
-        if row["prediction"] == "Above":
-            if not row["correct"]:
-                streak += 1
-            else:
-                break
-
-    martingale_bet = BET_AMOUNT * (2 ** streak)
-
-    if prediction == "Above":
-        if actual > 2.0:
-            balance += martingale_bet
-        else:
-            balance -= martingale_bet
-
-        with open(MARTINGALE_FILE, "w") as f:
-            f.write(str(balance))
-
 def reset_balance():
-    for f in [BALANCE_FILE, MARTINGALE_FILE]:
+    for f in [FLAT_FILE, FIXED_FILE]:
         if os.path.exists(f):
             os.remove(f)
 
+# Streamlit App
 def main():
-    st.title("Crash Game Predictor with Sol + Martingale Tracker")
+    st.title("Crash Game Predictor with SOL Flat & Fixed Betting")
 
     if "history" not in st.session_state:
         st.session_state.history = load_history()
@@ -186,10 +176,10 @@ def main():
     else:
         st.write("No predictions have been verified yet.")
 
-    st.subheader("💰 Sol Tracker")
-    st.metric("Flat Betting Balance", f"{get_balance():.4f} SOL")
-    st.metric("Martingale Balance", f"{get_martingale():.4f} SOL")
-    st.caption("You start with 0.1 SOL. Each 'Above' prediction places a 0.01 SOL flat bet or Martingale doubling after losses.")
+    st.subheader("💰 SOL Balance Tracker")
+    st.metric("Flat Bet Balance (0.01 SOL)", f"{get_flat_balance():.4f} SOL")
+    st.metric("Fixed Bet Balance (0.02 SOL)", f"{get_fixed_balance():.4f} SOL")
+    st.caption("You start with 0.1 SOL. Each 'Above' prediction places a 0.01 SOL flat bet and a 0.02 SOL fixed bet, win or lose.")
 
 if __name__ == "__main__":
     main()
